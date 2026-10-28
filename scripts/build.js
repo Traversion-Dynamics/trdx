@@ -55,10 +55,13 @@ if (!EMAIL_RE.test(contactTo)) {
   contactTo = '';
 }
 
+/* static hosts have no /api/contact, so the form posts to FormSubmit, which emails contactTo */
+const formEndpoint = contactTo ? 'https://formsubmit.co/ajax/' + contactTo : '';
+
 const esc = (v) => String(v).replace(/[&"<>]/g, '');
 const extraHead = [
   /* static hosts cannot send headers, so the policy goes in a meta tag */
-  '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\'; style-src \'self\'; img-src \'self\' data:; font-src \'self\'; connect-src \'self\'; media-src \'self\'; object-src \'none\'; base-uri \'self\'; form-action \'self\'">',
+  '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\'; style-src \'self\'; img-src \'self\' data:; font-src \'self\'; connect-src \'self\' https://formsubmit.co; media-src \'self\'; object-src \'none\'; base-uri \'self\'; form-action \'self\'">',
   config.googleSiteVerification ? '<meta name="google-site-verification" content="' + esc(config.googleSiteVerification) + '">' : '',
   config.bingSiteVerification ? '<meta name="msvalidate.01" content="' + esc(config.bingSiteVerification) + '">' : ''
 ].filter(Boolean).join('\n');
@@ -75,6 +78,8 @@ fs.cpSync(SRC, OUT, { recursive: true });
       .readFileSync(full, 'utf8')
       .replace(/%%SITE_URL%%/g, siteUrl)
       .replace(/%%CONTACT_TO%%/g, contactTo)
+      /* email_off stops Cloudflare's email obfuscation from rewriting the address in the endpoint */
+      .replace(/<form([^>]*)data-endpoint="\/api\/contact"([^>]*)>/, formEndpoint ? '<!--email_off--><form$1data-endpoint="' + formEndpoint + '"$2><!--/email_off-->' : '$&')
       .replace('<meta charset="utf-8">', '<meta charset="utf-8">\n' + extraHead);
     fs.writeFileSync(full, html);
   });

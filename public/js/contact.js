@@ -1,7 +1,7 @@
 /* Traversion Dynamics: contact form.
    The form posts JSON to this site's own /api/contact endpoint (see api/contact.js and
-   lib/contact.js). The receiving address and mail credentials exist only on the server,
-   as environment variables. They are never in this file or in the page. */
+   lib/contact.js). The static build (scripts/build.js) points data-endpoint at FormSubmit
+   instead, since a static host has no server to send mail. */
 (function () {
   'use strict';
 
@@ -9,6 +9,8 @@
   if (!form) { return; }
 
   var endpoint = form.getAttribute('data-endpoint') || '/api/contact';
+  var external = /^https?:\/\//.test(endpoint);
+  var MIN_FILL_MS = 1500;
   var sent = document.getElementById('sent');
   var again = document.getElementById('sentAgain');
   var statusEl = document.getElementById('formStatus');
@@ -95,7 +97,24 @@
     sent.focus();
   }
 
+  function externalPayload() {
+    var topic = control('topic');
+    var topicLabel = topic.options[topic.selectedIndex].text;
+    return {
+      name: value('name'),
+      email: value('email'),
+      organization: value('organization'),
+      role: value('role'),
+      topic: topicLabel,
+      message: value('message'),
+      _subject: 'Traversion Dynamics: ' + topicLabel + ' (' + value('name') + ')',
+      _template: 'table',
+      _captcha: 'false'
+    };
+  }
+
   function payload() {
+    if (external) { return externalPayload(); }
     return {
       name: value('name'),
       email: value('email'),
@@ -117,9 +136,16 @@
     var firstBad = validate();
     if (firstBad) { firstBad.focus(); return; }
 
+    /* the server does these spam checks itself; FormSubmit cannot, so bots get a fake success here */
+    if (external && (control('website').value !== '' || Date.now() - openedAt < MIN_FILL_MS)) {
+      showSent();
+      return;
+    }
+
     setBusy(true);
     var controller = new AbortController();
-    var timer = setTimeout(function () { controller.abort(); }, 20000);
+    /* FormSubmit can take 30 seconds or more to answer */
+    var timer = setTimeout(function () { controller.abort(); }, external ? 90000 : 20000);
 
     fetch(endpoint, {
       method: 'POST',
@@ -132,7 +158,7 @@
         return res.json().catch(function () { return {}; }).then(function (body) { return { res: res, body: body }; });
       })
       .then(function (r) {
-        if (r.res.ok && r.body.ok) { showSent(); return; }
+        if (r.res.ok && (r.body.ok || String(r.body.success) === 'true')) { showSent(); return; }
 
         if (r.res.status === 400 && r.body.errors) {
           var first = null;
